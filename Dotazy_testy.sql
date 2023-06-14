@@ -68,7 +68,6 @@ EXEC u20669148.Pridaj_predatora_korist_slovny_popis 'Tygr indický', 'Jak divoký'
 
 
 
-
 -- DROP SCHEMY
 
 drop view Zvierata;
@@ -89,6 +88,9 @@ drop procedure u20669148.Pridaj_telefon_osetrovatelovi;
 drop procedure u20669148.Pridaj_telefon_osetrovatelovi_slovny_popis;
 drop procedure u20669148.Pridaj_zviera_na_osetrovanie;
 drop procedure u20669148.Pridaj_zviera_na_osetrovanie_slovny_popis;
+drop procedure u20669148.Zmena_Adresy_osetrovatela;
+drop procedure u20669148.Zmena_Adresy_osetrovatela_ID;
+drop procedure u20669148.Zmena_Adresy_osetrovatela_slovny_popis;
 
 
 drop table Email;

@@ -16,7 +16,7 @@
 -- INDEXY
 
 
-create index Predator_FK_index on Predator(ID_predator);
+
 create index Potrava_FK_index on Predator(ID_potrava);
 
 create index Druh_FK_index on Zviera(ID_druh);
@@ -24,7 +24,6 @@ create index Pavilon_FK_index on Zviera(ID_pavilon);
 
 create index Osetrovatel_FK_index on Telefonne_cislo(ID_osetrovatel);
 
-create index OsetrovatelOsetruje_FK_index on Osetruje(ID_osetrovatel);
 create index ZvieraOsetrovane_FK_index on Osetruje(ID_zviera);
 
 create index Adresa_FK_index on Osetrovatel(ID_adresa);
@@ -45,13 +44,13 @@ create index OsetrovatelEmail_FK_index on Email(ID_osetrovatel);
 
 alter view Osetrovatelia
 as
-select o.ID, o.Meno, a.Ulica, a.Cislo as Cislo_domu, a.PSC, a.Mesto, a.Stat, t.Predvolba, t.Cislo as Tel_cislo, e.Email as Email, count(Osetruje.ID_osetrovatel) as Pocet_osetrovanych_zvierat
+select o.ID, o.Meno, a.Ulica, a.Cislo as Cislo_domu, a.PSC, a.Mesto, a.Stat, t.Predvolba, t.Cislo as Tel_cislo, e.Email as Email, count(s.ID_osetrovatel) as Pocet_osetrovanych_zvierat
 	from Osetrovatel as o 
 		left outer join Adresa as a on(o.ID_adresa=a.ID) 
 		left outer join Telefonne_cislo as t on(o.ID=t.ID_osetrovatel)
-		left outer join Osetruje on(o.ID=Osetruje.ID_osetrovatel)
+		left outer join Osetruje as s on(o.ID=s.ID_osetrovatel)
 		left outer join Email as e on(o.ID=e.ID_osetrovatel)
-	group by o.ID, o.Meno, a.Ulica, a.Cislo, a.PSC, a.Mesto, a.Stat, t.Predvolba, t.Cislo, e.Email, Osetruje.ID_osetrovatel;
+	group by o.ID, o.Meno, a.Ulica, a.Cislo, a.PSC, a.Mesto, a.Stat, t.Predvolba, t.Cislo, e.Email, s.ID_osetrovatel;
 
 
 
@@ -105,8 +104,8 @@ as
 select o.ID as ID_osetrovatela, o.Meno as Osetrovatel, z.ID as ID_zvierata, z.Meno as Zviera, z.Datum_narodenia, z.Vaha, z.Vyska, d.Nazov as Druh, d.Nebezpecnost, d.Potrava, p.Nazov as Pavilon, p.Zabezpecenie from Osetrovatel as o
 	inner join Osetruje as s on(o.ID=s.ID_osetrovatel)
 	left outer join Zviera as z on(s.ID_zviera=z.ID)
-	inner join Druh_Zvierata as d on(z.ID_druh=d.ID)
-	inner join Pavilon as p on(z.ID_pavilon=p.ID);
+	left outer join Druh_Zvierata as d on(z.ID_druh=d.ID)
+	left outer join Pavilon as p on(z.ID_pavilon=p.ID);
 
 
 -- TRIGGRE
@@ -239,25 +238,27 @@ end;
 
 
 
+
 -- predator a jeho potrava v jednom pavilone vyzaduje zvysenu pozornost
 
 -- funkcia na najdenie predatora alebo koriste zvierata
-create function Predatori_zvierata_je_predatorom(
+alter function Predator_zviera_retazec(
 	@pZviera_druh numeric(10,0)
 	) returns @a table (
-		Predator_OR_Potrava numeric(10,0)
+		Predator_OR_Potrava numeric(10,0),
+		Typ varchar(20)
 	)
 as
 begin
 	
 	with 
-		potrava(ID_predator) as(
-			select ID_predator
+		potrava(ID_predator, typ) as(
+			select ID_predator, 'predator'
 				from Predator
 				where ID_potrava=@pZviera_druh and @pZviera_druh is not null
 		),
-		predator(ID_potrava) as(
-			select ID_potrava
+		predator(ID_potrava, typ) as(
+			select ID_potrava, 'potrava'
 				from Predator
 				where ID_predator=@pZviera_druh and @pZviera_druh is not null
 		)
@@ -272,7 +273,7 @@ end;
 
 -- napriklad nove zviera/update zvierata, teda mozna zmena jeho pavilonu alebo druhu
 
-create trigger Zviera_predator_v_pavilone
+alter trigger Zviera_predator_v_pavilone
 on Zviera
 after update, insert
 as
@@ -283,7 +284,7 @@ begin
 			from inserted as i
 			where exists (
 							select * 
-								from u20669148.Predatori_zvierata_je_predatorom(i.ID_druh) as X
+								from u20669148.Predator_zviera_retazec(i.ID_druh) as X
 								inner join Zviera as z on(z.ID_druh=X.Predator_OR_Potrava)
 								where z.ID_pavilon=i.ID_pavilon
 						 )
@@ -379,13 +380,14 @@ begin
 		commit transaction
 	end try
 	begin catch
-		SELECT  
-        ERROR_NUMBER() AS ErrorNumber  
-        ,ERROR_SEVERITY() AS ErrorSeverity  
-        ,ERROR_STATE() AS ErrorState  
-        ,ERROR_PROCEDURE() AS ErrorProcedure  
-        ,ERROR_LINE() AS ErrorLine  
-        ,ERROR_MESSAGE() AS ErrorMessage;
+		DECLARE @ErrorMessage NVARCHAR(4000);
+		DECLARE @ErrorSeverity INT;
+		DECLARE @ErrorState INT;
+		SELECT
+			@ErrorMessage = ERROR_MESSAGE(),
+			@ErrorSeverity = ERROR_SEVERITY(),
+			@ErrorState = ERROR_STATE();
+		RAISERROR (@ErrorMessage, @ErrorSeverity, @ErrorState);
 		ROLLBACK TRANSACTION;        
 	end catch
 end;
@@ -435,13 +437,14 @@ begin
 		commit transaction;
 	end TRY
 	begin CATCH
-		SELECT  
-        ERROR_NUMBER() AS ErrorNumber  
-        ,ERROR_SEVERITY() AS ErrorSeverity  
-        ,ERROR_STATE() AS ErrorState  
-        ,ERROR_PROCEDURE() AS ErrorProcedure  
-        ,ERROR_LINE() AS ErrorLine  
-        ,ERROR_MESSAGE() AS ErrorMessage;
+		DECLARE @ErrorMessage NVARCHAR(4000);
+		DECLARE @ErrorSeverity INT;
+		DECLARE @ErrorState INT;
+		SELECT
+			@ErrorMessage = ERROR_MESSAGE(),
+			@ErrorSeverity = ERROR_SEVERITY(),
+			@ErrorState = ERROR_STATE();
+		RAISERROR (@ErrorMessage, @ErrorSeverity, @ErrorState);
 		ROLLBACK TRANSACTION; 
 	end CATCH
 end;
@@ -478,13 +481,14 @@ begin
 		commit transaction;
 	end try
 	begin catch
-		SELECT  
-			ERROR_NUMBER() AS ErrorNumber  
-			,ERROR_SEVERITY() AS ErrorSeverity  
-			,ERROR_STATE() AS ErrorState  
-			,ERROR_PROCEDURE() AS ErrorProcedure  
-			,ERROR_LINE() AS ErrorLine  
-			,ERROR_MESSAGE() AS ErrorMessage;
+		DECLARE @ErrorMessage NVARCHAR(4000);
+		DECLARE @ErrorSeverity INT;
+		DECLARE @ErrorState INT;
+		SELECT
+			@ErrorMessage = ERROR_MESSAGE(),
+			@ErrorSeverity = ERROR_SEVERITY(),
+			@ErrorState = ERROR_STATE();
+		RAISERROR (@ErrorMessage, @ErrorSeverity, @ErrorState);
 		ROLLBACK TRANSACTION;
 	end catch
 end;
@@ -522,13 +526,14 @@ begin
 		commit transaction;
 	end try
 	begin catch
-		SELECT  
-			ERROR_NUMBER() AS ErrorNumber  
-			,ERROR_SEVERITY() AS ErrorSeverity  
-			,ERROR_STATE() AS ErrorState  
-			,ERROR_PROCEDURE() AS ErrorProcedure  
-			,ERROR_LINE() AS ErrorLine  
-			,ERROR_MESSAGE() AS ErrorMessage;
+		DECLARE @ErrorMessage NVARCHAR(4000);
+		DECLARE @ErrorSeverity INT;
+		DECLARE @ErrorState INT;
+		SELECT
+			@ErrorMessage = ERROR_MESSAGE(),
+			@ErrorSeverity = ERROR_SEVERITY(),
+			@ErrorState = ERROR_STATE();
+		RAISERROR (@ErrorMessage, @ErrorSeverity, @ErrorState);
 		ROLLBACK TRANSACTION;
 	end catch
 end;
@@ -568,13 +573,14 @@ begin
 		commit transaction;
 	end try
 	begin catch
-		SELECT  
-			ERROR_NUMBER() AS ErrorNumber  
-			,ERROR_SEVERITY() AS ErrorSeverity  
-			,ERROR_STATE() AS ErrorState  
-			,ERROR_PROCEDURE() AS ErrorProcedure  
-			,ERROR_LINE() AS ErrorLine  
-			,ERROR_MESSAGE() AS ErrorMessage;
+		DECLARE @ErrorMessage NVARCHAR(4000);
+		DECLARE @ErrorSeverity INT;
+		DECLARE @ErrorState INT;
+		SELECT
+			@ErrorMessage = ERROR_MESSAGE(),
+			@ErrorSeverity = ERROR_SEVERITY(),
+			@ErrorState = ERROR_STATE();
+		RAISERROR (@ErrorMessage, @ErrorSeverity, @ErrorState);
 		ROLLBACK TRANSACTION;
 	end catch
 end;
@@ -606,6 +612,110 @@ begin
 	
 end;
 
+
+
+
+-- procedury na zmenu adresy osetrovatela
+
+
+create procedure Zmena_Adresy_osetrovatela(
+	@pID numeric(10,0),
+	@pADRstat varchar(50),
+	@pADRmesto varchar(50),
+	@pADRulica varchar(50),
+	@pADRcislo varchar(15),
+	@pADRpsc numeric(5,0)
+)
+as
+set nocount on;
+begin
+
+	begin TRANSACTION;
+	begin TRY
+		declare @xIDadresa numeric(10,0);
+
+		insert into Adresa(Stat, Mesto, Ulica, Cislo, PSC) values(@pADRstat, @pADRmesto, @pADRulica, @pADRcislo, @pADRpsc);
+		set @xIDadresa = SCOPE_IDENTITY();
+
+		update Osetrovatel set ID_adresa=@xIDadresa where Osetrovatel.ID=@pID;
+		
+		commit transaction;
+	end TRY
+	begin CATCH
+		DECLARE @ErrorMessage NVARCHAR(4000);
+		DECLARE @ErrorSeverity INT;
+		DECLARE @ErrorState INT;
+		SELECT
+			@ErrorMessage = ERROR_MESSAGE(),
+			@ErrorSeverity = ERROR_SEVERITY(),
+			@ErrorState = ERROR_STATE();
+		RAISERROR (@ErrorMessage, @ErrorSeverity, @ErrorState);
+		ROLLBACK TRANSACTION; 
+	end CATCH
+
+end;
+
+
+
+create procedure Zmena_Adresy_osetrovatela_ID(
+	@pIDosetrovatel numeric(10,0),
+	@pIDadresa numeric(10,0)
+)
+as
+set nocount on;
+begin
+
+	update Osetrovatel set ID_adresa=@pIDadresa where Osetrovatel.ID=@pIDosetrovatel;
+
+end;
+
+
+
+
+create procedure Zmena_Adresy_osetrovatela_slovny_popis(
+	@pMeno varchar(100),
+	@pADRstat varchar(50),
+	@pADRmesto varchar(50),
+	@pADRulica varchar(50),
+	@pADRcislo varchar(15),
+	@pADRpsc numeric(5,0)
+)
+as
+set nocount on;
+begin
+
+	begin TRANSACTION;
+	begin TRY
+		declare @xIDosetrovatel numeric(10,0);
+		declare @xIDadresa numeric(10,0);
+
+		insert into Adresa(Stat, Mesto, Ulica, Cislo, PSC) values(@pADRstat, @pADRmesto, @pADRulica, @pADRcislo, @pADRpsc);
+		set @xIDadresa = SCOPE_IDENTITY();
+
+		declare @pocet numeric;
+		select @pocet=count(*), @xIDosetrovatel=min(ID) from Osetrovatel where Meno=@pMeno;
+		if @pocet<>1 
+		begin
+			RAISERROR('Nutne presne specifikovat ID osetrovatela!', 15, 1);
+		end;
+
+		update Osetrovatel set ID_adresa=@xIDadresa where Osetrovatel.ID=@xIDosetrovatel;
+		
+		commit transaction;
+	end TRY
+	begin CATCH
+		DECLARE @ErrorMessage NVARCHAR(4000);
+		DECLARE @ErrorSeverity INT;
+		DECLARE @ErrorState INT;
+		SELECT
+			@ErrorMessage = ERROR_MESSAGE(),
+			@ErrorSeverity = ERROR_SEVERITY(),
+			@ErrorState = ERROR_STATE();
+		RAISERROR (@ErrorMessage, @ErrorSeverity, @ErrorState);
+		ROLLBACK TRANSACTION; 
+	end CATCH
+
+end;
 
 
 

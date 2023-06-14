@@ -126,7 +126,7 @@ create table Osetruje(
 		constraint Osetruje_Zviera_FK references Zviera(ID)
 		on update cascade
 		on delete cascade,
-	constraint Osetrovatel_zivera_unique unique (ID_osetrovatel, ID_zviera)
+	constraint Osetruje_PK primary key (ID_osetrovatel, ID_zviera)
 );
 
 
@@ -141,7 +141,7 @@ create table Predator(
 		constraint Predator_potrava_FK references Druh_Zvierata(ID)
 		on update no action
 		on delete no action,
-	constraint Predator_Korist_unique unique(ID_predator, ID_potrava)
+	constraint Predator_PK primary key (ID_predator, ID_potrava)
 );
 
 
